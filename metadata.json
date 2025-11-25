@@ -1,0 +1,5 @@
+{
+  "name": "Cleaning Platform V2",
+  "description": "Plateforme de gestion pour entreprise de nettoyage - Initialisation du projet (Vite + React + TS + Tailwind + Supabase)",
+  "requestFramePermissions": []
+}
