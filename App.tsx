@@ -1,70 +1,115 @@
 import React from 'react';
+import { HashRouter, Routes, Route, Navigate, useLocation } from 'react-router-dom';
 import { AuthProvider, useAuth } from './src/context/AuthContext';
 import LoginPage from './src/pages/auth/LoginPage';
-import { LogOut, User } from 'lucide-react';
+import { UserRole } from './types/types';
+import { Loader2 } from 'lucide-react';
 
-function Dashboard() {
-  const { user, profile, signOut } = useAuth();
-  
-  return (
-    <div className="min-h-screen bg-gray-50">
-      <nav className="bg-white shadow-sm border-b px-4 py-3 flex justify-between items-center">
-        <h1 className="text-xl font-bold text-blue-600">CleanManager</h1>
-        <div className="flex items-center gap-4">
-          <div className="flex items-center gap-2 text-sm text-gray-700">
-            <div className="w-8 h-8 bg-blue-100 rounded-full flex items-center justify-center text-blue-700">
-              <User size={16} />
-            </div>
-            <div className="hidden md:block">
-              <p className="font-medium">{profile?.full_name || user?.email}</p>
-              <p className="text-xs text-gray-500 capitalize">{profile?.role || 'Utilisateur'}</p>
-            </div>
-          </div>
-          <button 
-            onClick={signOut}
-            className="p-2 text-gray-500 hover:text-red-600 hover:bg-red-50 rounded-lg transition-colors"
-            title="Se déconnecter"
-          >
-            <LogOut size={20} />
-          </button>
-        </div>
-      </nav>
+// --- Composants Temporaires pour les Dashboards ---
+const AdminDashboard = () => <div className="p-8 text-2xl font-bold text-purple-600">Espace Administrateur 🛡️</div>;
+const ClientDashboard = () => <div className="p-8 text-2xl font-bold text-blue-600">Espace Client 🏠</div>;
+const ProviderDashboard = () => <div className="p-8 text-2xl font-bold text-green-600">Espace Prestataire 🧹</div>;
+const Unauthorized = () => <div className="p-8 text-red-600 font-bold">Accès non autorisé ⛔</div>;
 
-      <main className="p-8">
-        <div className="max-w-4xl mx-auto">
-          <div className="bg-white p-8 rounded-xl shadow-sm border border-gray-200 text-center">
-            <h2 className="text-2xl font-bold text-gray-800 mb-2">Bienvenue sur votre espace !</h2>
-            <p className="text-gray-600 mb-6">Vous êtes connecté avec l'email : <strong>{user?.email}</strong></p>
-            
-            <div className="p-4 bg-blue-50 text-blue-800 rounded-lg inline-block">
-              Ceci est un tableau de bord temporaire. <br/>
-              Les pages spécifiques ({profile?.role}) seront intégrées prochainement.
-            </div>
-          </div>
-        </div>
-      </main>
-    </div>
-  );
-}
-
-function AppContent() {
-  const { user, loading } = useAuth();
+// --- Composant de Protection des Routes ---
+const ProtectedRoute = ({ children, allowedRoles }: { children: React.ReactNode, allowedRoles?: UserRole[] }) => {
+  const { user, profile, loading } = useAuth();
+  const location = useLocation();
 
   if (loading) {
     return (
-      <div className="flex items-center justify-center min-h-screen bg-gray-50">
-        <div className="text-blue-600 animate-pulse font-medium">Chargement de l'application...</div>
+      <div className="flex items-center justify-center h-screen bg-gray-50">
+        <Loader2 className="w-10 h-10 text-blue-600 animate-spin" />
       </div>
     );
   }
 
-  return user ? <Dashboard /> : <LoginPage />;
-}
+  // 1. Non connecté -> Redirection vers Login
+  if (!user) {
+    return <Navigate to="/login" state={{ from: location }} replace />;
+  }
 
+  // 2. Connecté mais profil pas encore chargé (ou erreur RLS) -> Attente
+  if (!profile) {
+    return (
+       <div className="flex flex-col items-center justify-center h-screen bg-gray-50 gap-4">
+        <Loader2 className="w-10 h-10 text-blue-600 animate-spin" />
+        <p className="text-gray-500 font-medium">Chargement du profil...</p>
+        <p className="text-xs text-gray-400">Vérification des droits d'accès</p>
+      </div>
+    );
+  }
+
+  // 3. Rôle non autorisé -> Page Unauthorized
+  if (allowedRoles && !allowedRoles.includes(profile.role)) {
+    return <Unauthorized />;
+  }
+
+  return <>{children}</>;
+};
+
+// --- Composant de Redirection Racine ---
+const RootRedirect = () => {
+  const { user, profile, loading } = useAuth();
+
+  if (loading) return <div className="flex h-screen items-center justify-center"><Loader2 className="animate-spin text-blue-600" /></div>;
+  
+  if (!user) return <Navigate to="/login" replace />;
+  
+  // Redirection intelligente selon le rôle
+  if (profile?.role === UserRole.ADMIN) return <Navigate to="/admin" replace />;
+  if (profile?.role === UserRole.CLIENT) return <Navigate to="/client" replace />;
+  if (profile?.role === UserRole.PRESTATAIRE) return <Navigate to="/provider" replace />;
+  
+  return <div className="p-8 text-center text-gray-500">Profil incomplet ou rôle inconnu.</div>;
+};
+
+// --- Application Principale ---
 export default function App() {
   return (
     <AuthProvider>
-      <AppContent />
+      <HashRouter>
+        <Routes>
+          {/* Route Publique */}
+          <Route path="/login" element={<LoginPage />} />
+
+          {/* Redirection Racine */}
+          <Route path="/" element={<RootRedirect />} />
+
+          {/* Routes Protégées ADMIN */}
+          <Route 
+            path="/admin/*" 
+            element={
+              <ProtectedRoute allowedRoles={[UserRole.ADMIN]}>
+                <AdminDashboard />
+              </ProtectedRoute>
+            } 
+          />
+
+          {/* Routes Protégées CLIENT */}
+          <Route 
+            path="/client/*" 
+            element={
+              <ProtectedRoute allowedRoles={[UserRole.CLIENT]}>
+                <ClientDashboard />
+              </ProtectedRoute>
+            } 
+          />
+
+          {/* Routes Protégées PRESTATAIRE */}
+          <Route 
+            path="/provider/*" 
+            element={
+              <ProtectedRoute allowedRoles={[UserRole.PRESTATAIRE]}>
+                <ProviderDashboard />
+              </ProtectedRoute>
+            } 
+          />
+
+          {/* Fallback 404 */}
+          <Route path="*" element={<Navigate to="/" replace />} />
+        </Routes>
+      </HashRouter>
     </AuthProvider>
   );
 }
