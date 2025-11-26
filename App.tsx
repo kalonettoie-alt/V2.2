@@ -1,114 +1,92 @@
 import React from 'react';
-import { HashRouter, Routes, Route, Navigate, useLocation } from 'react-router-dom';
+import { HashRouter, Routes, Route, Navigate } from 'react-router-dom';
 import { AuthProvider, useAuth } from './src/context/AuthContext';
 import LoginPage from './src/pages/auth/LoginPage';
 import { UserRole } from './types/types';
 import { Loader2 } from 'lucide-react';
 
-// --- Composants Temporaires pour les Dashboards ---
-const AdminDashboard = () => <div className="p-8 text-2xl font-bold text-purple-600">Espace Administrateur 🛡️</div>;
-const ClientDashboard = () => <div className="p-8 text-2xl font-bold text-blue-600">Espace Client 🏠</div>;
-const ProviderDashboard = () => <div className="p-8 text-2xl font-bold text-green-600">Espace Prestataire 🧹</div>;
-const Unauthorized = () => <div className="p-8 text-red-600 font-bold">Accès non autorisé ⛔</div>;
+// Page temporaire admin
+function AdminTemp() {
+  return <div className="p-8 text-2xl font-bold text-purple-600">Dashboard Admin (à venir) 🛡️</div>;
+}
 
-// --- Composant de Protection des Routes ---
-const ProtectedRoute = ({ children, allowedRoles }: { children: React.ReactNode, allowedRoles?: UserRole[] }) => {
+// Protection des routes
+function ProtectedRoute({ children, allowedRoles }: { children: React.ReactNode; allowedRoles: string[] }) {
   const { user, profile, loading } = useAuth();
-  const location = useLocation();
 
   if (loading) {
     return (
-      <div className="flex items-center justify-center h-screen bg-gray-50">
+      <div className="h-screen flex items-center justify-center bg-gray-50">
         <Loader2 className="w-10 h-10 text-blue-600 animate-spin" />
       </div>
     );
   }
 
-  // 1. Non connecté -> Redirection vers Login
-  if (!user) {
-    return <Navigate to="/login" state={{ from: location }} replace />;
-  }
+  // Si pas connecté, retour au login
+  if (!user) return <Navigate to="/login" replace />;
+  
+  // Si connecté mais pas de profil chargé (bug RLS ou latence), on attend un peu
+  if (!profile) return (
+    <div className="h-screen flex items-center justify-center bg-gray-50 flex-col gap-2">
+      <Loader2 className="w-8 h-8 text-blue-600 animate-spin" />
+      <span className="text-gray-500 text-sm">Chargement du profil...</span>
+    </div>
+  );
 
-  // 2. Connecté mais profil pas encore chargé (ou erreur RLS) -> Attente
-  if (!profile) {
-    return (
-       <div className="flex flex-col items-center justify-center h-screen bg-gray-50 gap-4">
-        <Loader2 className="w-10 h-10 text-blue-600 animate-spin" />
-        <p className="text-gray-500 font-medium">Chargement du profil...</p>
-        <p className="text-xs text-gray-400">Vérification des droits d'accès</p>
-      </div>
-    );
-  }
-
-  // 3. Rôle non autorisé -> Page Unauthorized
-  if (allowedRoles && !allowedRoles.includes(profile.role)) {
-    return <Unauthorized />;
+  // Si le rôle n'est pas autorisé
+  if (!allowedRoles.includes(profile.role)) {
+    return <div className="p-8 text-red-600 font-bold">Accès non autorisé ⛔</div>;
   }
 
   return <>{children}</>;
-};
+}
 
-// --- Composant de Redirection Racine ---
-const RootRedirect = () => {
+function AppRoutes() {
   const { user, profile, loading } = useAuth();
 
-  if (loading) return <div className="flex h-screen items-center justify-center"><Loader2 className="animate-spin text-blue-600" /></div>;
-  
-  if (!user) return <Navigate to="/login" replace />;
-  
-  // Redirection intelligente selon le rôle
-  if (profile?.role === UserRole.ADMIN) return <Navigate to="/admin" replace />;
-  if (profile?.role === UserRole.CLIENT) return <Navigate to="/client" replace />;
-  if (profile?.role === UserRole.PRESTATAIRE) return <Navigate to="/provider" replace />;
-  
-  return <div className="p-8 text-center text-gray-500">Profil incomplet ou rôle inconnu.</div>;
-};
+  if (loading) {
+     return <div className="h-screen flex items-center justify-center"><Loader2 className="w-10 h-10 text-blue-600 animate-spin" /></div>;
+  }
 
-// --- Application Principale ---
+  // Si pas connecté, on montre le login (sauf si l'URL est explicite, géré par le Router)
+  // Ici, on définit les routes globales
+  
+  const getRedirectPath = () => {
+    if (!profile) return '/login';
+    if (profile.role === UserRole.ADMIN) return '/admin';
+    if (profile.role === UserRole.CLIENT) return '/client';
+    return '/provider';
+  };
+
+  return (
+    <Routes>
+      <Route path="/login" element={!user ? <LoginPage /> : <Navigate to={getRedirectPath()} replace />} />
+      
+      <Route path="/" element={<Navigate to={user ? getRedirectPath() : "/login"} replace />} />
+      
+      <Route
+        path="/admin/*"
+        element={
+          <ProtectedRoute allowedRoles={[UserRole.ADMIN]}>
+            <AdminTemp />
+          </ProtectedRoute>
+        }
+      />
+      
+      {/* Routes client et prestataire à ajouter plus tard, redirection temporaire pour test */}
+      <Route path="/client" element={<div className="p-8 text-blue-600">Espace Client (Bientôt) 🏠</div>} />
+      <Route path="/provider" element={<div className="p-8 text-green-600">Espace Prestataire (Bientôt) 🧹</div>} />
+      
+      <Route path="*" element={<Navigate to="/" replace />} />
+    </Routes>
+  );
+}
+
 export default function App() {
   return (
     <AuthProvider>
       <HashRouter>
-        <Routes>
-          {/* Route Publique */}
-          <Route path="/login" element={<LoginPage />} />
-
-          {/* Redirection Racine */}
-          <Route path="/" element={<RootRedirect />} />
-
-          {/* Routes Protégées ADMIN */}
-          <Route 
-            path="/admin/*" 
-            element={
-              <ProtectedRoute allowedRoles={[UserRole.ADMIN]}>
-                <AdminDashboard />
-              </ProtectedRoute>
-            } 
-          />
-
-          {/* Routes Protégées CLIENT */}
-          <Route 
-            path="/client/*" 
-            element={
-              <ProtectedRoute allowedRoles={[UserRole.CLIENT]}>
-                <ClientDashboard />
-              </ProtectedRoute>
-            } 
-          />
-
-          {/* Routes Protégées PRESTATAIRE */}
-          <Route 
-            path="/provider/*" 
-            element={
-              <ProtectedRoute allowedRoles={[UserRole.PRESTATAIRE]}>
-                <ProviderDashboard />
-              </ProtectedRoute>
-            } 
-          />
-
-          {/* Fallback 404 */}
-          <Route path="*" element={<Navigate to="/" replace />} />
-        </Routes>
+        <AppRoutes />
       </HashRouter>
     </AuthProvider>
   );
