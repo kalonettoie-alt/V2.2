@@ -1,7 +1,7 @@
 import React, { createContext, useContext, useEffect, useState } from 'react';
-import { Session, User } from '@supabase/supabase-js';
+import { Session, User, AuthError, AuthResponse } from '@supabase/supabase-js';
 import { supabase } from '../../services/supabase';
-import { Profile } from '../../types/types';
+import { Profile, UserRole } from '../../types/types';
 
 interface AuthContextType {
   session: Session | null;
@@ -9,6 +9,8 @@ interface AuthContextType {
   profile: Profile | null;
   loading: boolean;
   isAdmin: boolean;
+  signIn: (email: string, password: string) => Promise<AuthResponse>;
+  signUp: (email: string, password: string, fullName: string, role: UserRole) => Promise<AuthResponse>;
   signOut: () => Promise<void>;
 }
 
@@ -38,10 +40,8 @@ export const AuthProvider = ({ children }: { children: React.ReactNode }) => {
       setUser(session?.user ?? null);
       
       if (session?.user) {
-        // Si l'utilisateur change ou se connecte, on charge son profil
         fetchProfile(session.user.id);
       } else {
-        // Déconnexion
         setProfile(null);
         setLoading(false);
       }
@@ -60,7 +60,8 @@ export const AuthProvider = ({ children }: { children: React.ReactNode }) => {
         .single();
 
       if (error) {
-        console.error('Erreur lors du chargement du profil:', error);
+        // Si pas de profil trouvé (ex: premier login avant trigger), on ne fait rien ou on log
+        console.log('Profil en cours de création ou introuvable:', error.message);
       } else {
         setProfile(data);
       }
@@ -69,6 +70,23 @@ export const AuthProvider = ({ children }: { children: React.ReactNode }) => {
     } finally {
       setLoading(false);
     }
+  };
+
+  const signIn = async (email: string, password: string) => {
+    return await supabase.auth.signInWithPassword({ email, password });
+  };
+
+  const signUp = async (email: string, password: string, fullName: string, role: UserRole) => {
+    return await supabase.auth.signUp({
+      email,
+      password,
+      options: {
+        data: {
+          full_name: fullName,
+          role: role,
+        },
+      },
+    });
   };
 
   const signOut = async () => {
@@ -83,7 +101,9 @@ export const AuthProvider = ({ children }: { children: React.ReactNode }) => {
     user,
     profile,
     loading,
-    isAdmin: profile?.role === 'admin',
+    isAdmin: profile?.role === UserRole.ADMIN,
+    signIn,
+    signUp,
     signOut
   };
 
